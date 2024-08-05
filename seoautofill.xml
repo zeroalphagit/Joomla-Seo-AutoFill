@@ -2,7 +2,7 @@
 <extension type="plugin" group="system" version="5.0" method="upgrade">
     <name>System - SEO AutoFill</name>
     <author>Zero Alpha Pty Ltd</author>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <copyright>Zero Alpha Pty Ltd</copyright>
     <license>GNU General Public License version 2 or later</license>
     <authorUrl>https://github.com/zeroalphagit/Joomla-Seo-AutoFill</authorUrl>

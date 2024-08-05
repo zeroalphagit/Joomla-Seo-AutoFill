@@ -1,10 +1,12 @@
 <?php
+// No direct access
 defined('_JEXEC') or die;
 
 use Joomla\CMS\Plugin\CMSPlugin;
 use Joomla\CMS\Factory;
+use Joomla\CMS\Uri\Uri;
 use Joomla\CMS\Document\HtmlDocument;
-use Joomla\CMS\Application\CMSApplication;
+use Joomla\CMS\MVC\Model\BaseDatabaseModel;
 use Joomla\Log\LogEntry;
 use Joomla\Log\Logger;
 use Exception;
@@ -89,36 +91,144 @@ class PlgSystemSeoAutoFill extends CMSPlugin
         try {
             // Remove the first <h1> tag and its content
             $content = preg_replace('/<h1[^>]*>.*?<\/h1>/is', '', $content, 1);
-            // Convert <br> to a space
-            $content = preg_replace('/<br\s*\/?>/i', ' ', $content);
-            // Decode HTML entities
-            $content = html_entity_decode($content);
-            // Strip remaining HTML tags
+    
+            // Remove all HTML tags
             $text = strip_tags($content);
-
-            // Extract sentences up to the character limit (160)
-            $sentences = preg_split('/(?<=[.!?])\s+/', $text, -1, PREG_SPLIT_NO_EMPTY);
-            $metaDescription = '';
-            foreach ($sentences as $sentence) {
-                $sentence = trim($sentence);
-                if (strlen($metaDescription) + strlen($sentence) + 1 > 160) {
-                    break;
+    
+            // Decode HTML entities
+            $text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
+    
+            // Remove non-printable characters
+            $text = preg_replace('/[\x00-\x1F\x7F]/u', '', $text);
+    
+            // Normalize whitespace: replace multiple spaces and newlines with a single space
+            $text = preg_replace('/\s+/', ' ', $text);
+    
+            // Ensure no leading or trailing spaces
+            $text = trim($text);
+    
+            // Trim to 160 characters at the last complete word
+            if (strlen($text) > 160) {
+                // Find the position of the last space within the 160 characters limit
+                $text = substr($text, 0, 160);
+                $lastSpace = strrpos($text, ' ');
+                if ($lastSpace !== false) {
+                    $text = substr($text, 0, $lastSpace);
                 }
-                // Add a space before the sentence if $metaDescription is not empty
-                $metaDescription .= ($metaDescription ? ' ' : '') . $sentence;
             }
-
-            // Remove extra spaces from beginning and end
-            return trim($metaDescription);
+    
+            return $text;
         } catch (Exception $e) {
             // Log the error
             $logger = Logger::getInstance();
             $logger->add(new LogEntry('Seo AutoFill plugin error generating meta description: ' . $e->getMessage(), LogEntry::ERROR));
-
+    
             // Notify the user
-            Factory::getApplication()->enqueueMessage('An error occurred in the Seo AutoFill plugin while generating the meta description. Please try again later.', 'error');
+            Factory::getApplication()->enqueueMessage('An error occurred while generating the meta description. Please try again later.', 'error');
             return ''; // Return empty if there's an error
         }
+    }  
+
+    protected function getFirstImageFromContent($content)
+    {
+        // Use preg_match to find the first image URL with specified file extensions
+        preg_match('/<img[^>]+src=["\']([^"\']+\.(jpg|png|webp))["\'][^>]*>/i', $content, $matches);
+
+        if (isset($matches[1])) {
+            $imageUrl = $matches[1];
+
+            // Convert relative URL to absolute URL
+            if (parse_url($imageUrl, PHP_URL_SCHEME) === null) {
+                // Relative URL; make it absolute
+                $imageUrl = Uri::root() . ltrim($imageUrl, '/');
+            }
+
+            return ['url' => $imageUrl];
+        }
+
+        return ['url' => ''];
+    }
+
+    public function onBeforeCompileHead()
+    {
+        $app = Factory::getApplication();
+
+        if ($app->isClient('administrator')) {
+            return;
+        }
+
+        $document = Factory::getDocument();
+        $metas = $document->getHeadData();
+
+        // Extract title and URL from existing meta data
+        $ogTitle = isset($metas['title']) ? $metas['title'] : '';
+        $ogType = 'website'; // Default type
+        $ogUrl = Uri::current();
+        $ogImage = ''; // Default image URL set to empty
+        $ogDescription = isset($metas['description']) ? $metas['description'] : '';
+
+        // Twitter Card variables
+        $twitterCardType = 'summary_large_image'; // Default type
+        $twitterTitle = $ogTitle;
+        $twitterDescription = $ogDescription;
+        $twitterImage = $ogImage;
+
+        // Fetch site name from global configuration
+        $siteName = Factory::getConfig()->get('sitename');
+
+        // Retrieve the article content and find the first image
+        $itemId = $app->input->getInt('id'); // Get the article ID
+        if ($itemId) {
+            $articleModel = BaseDatabaseModel::getInstance('Article', 'ContentModel');
+            $article = $articleModel->getItem($itemId);
+
+            if ($article) {
+                // Extract the first image from the article content
+                $imageData = $this->getFirstImageFromContent($article->introtext . $article->fulltext);
+                $ogImage = $imageData['url'];
+
+                // Set Twitter image to Open Graph image
+                $twitterImage = $ogImage;
+            }
+        }
+
+        // Add Open Graph tags first
+        if ($ogTitle) {
+            $document->addCustomTag('<meta property="og:title" content="' . htmlspecialchars($ogTitle, ENT_QUOTES, 'UTF-8') . '" />');
+        }
+        if ($ogType) {
+            $document->addCustomTag('<meta property="og:type" content="' . htmlspecialchars($ogType, ENT_QUOTES, 'UTF-8') . '" />');
+        }
+        if ($ogUrl) {
+            $document->addCustomTag('<meta property="og:url" content="' . htmlspecialchars($ogUrl, ENT_QUOTES, 'UTF-8') . '" />');
+        }
+        if ($ogImage) {
+            $document->addCustomTag('<meta property="og:image" content="' . htmlspecialchars($ogImage, ENT_QUOTES, 'UTF-8') . '" />');
+        }
+        if ($ogDescription) {
+            $document->addCustomTag('<meta property="og:description" content="' . htmlspecialchars($ogDescription, ENT_QUOTES, 'UTF-8') . '" />');
+        }
+        if ($siteName) {
+            $document->addCustomTag('<meta property="og:site_name" content="' . htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') . '" />');
+        }
+
+        // Add Twitter Card tags after Open Graph
+        if ($twitterTitle) {
+            $document->addCustomTag('<meta name="twitter:title" content="' . htmlspecialchars($twitterTitle, ENT_QUOTES, 'UTF-8') . '" />');
+        }
+        if ($twitterDescription) {
+            $document->addCustomTag('<meta name="twitter:description" content="' . htmlspecialchars($twitterDescription, ENT_QUOTES, 'UTF-8') . '" />');
+        }
+        if ($twitterImage) {
+            $document->addCustomTag('<meta name="twitter:image" content="' . htmlspecialchars($twitterImage, ENT_QUOTES, 'UTF-8') . '" />');
+        }
+
+        // Add Twitter Card type
+        $document->addCustomTag('<meta name="twitter:card" content="' . htmlspecialchars($twitterCardType, ENT_QUOTES, 'UTF-8') . '" />');
+
+        // Add canonical tag
+        $canonicalUrl = Uri::current();
+        $document->addCustomTag('<link rel="canonical" href="' . htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8') . '" />');
     }
 }
 ?>
