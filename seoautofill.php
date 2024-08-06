@@ -178,7 +178,10 @@ class PlgSystemSeoAutoFill extends CMSPlugin
 
         // Retrieve the article content and find the first image
         $itemId = $app->input->getInt('id'); // Get the article ID
-        if ($itemId) {
+        $view = $app->input->getCmd('view'); // Get the current view
+
+        // Only proceed if the current view is a single article view
+        if ($itemId && $view === 'article') {
             $articleModel = BaseDatabaseModel::getInstance('Article', 'ContentModel');
             $article = $articleModel->getItem($itemId);
 
@@ -212,7 +215,8 @@ class PlgSystemSeoAutoFill extends CMSPlugin
             $document->addCustomTag('<meta property="og:site_name" content="' . htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') . '" />');
         }
 
-        // Add Twitter Card tags after Open Graph
+        // Add Twitter Card tags second
+        $document->addCustomTag('<meta name="twitter:card" content="' . htmlspecialchars($twitterCardType, ENT_QUOTES, 'UTF-8') . '" />');
         if ($twitterTitle) {
             $document->addCustomTag('<meta name="twitter:title" content="' . htmlspecialchars($twitterTitle, ENT_QUOTES, 'UTF-8') . '" />');
         }
@@ -222,9 +226,6 @@ class PlgSystemSeoAutoFill extends CMSPlugin
         if ($twitterImage) {
             $document->addCustomTag('<meta name="twitter:image" content="' . htmlspecialchars($twitterImage, ENT_QUOTES, 'UTF-8') . '" />');
         }
-
-        // Add Twitter Card type
-        $document->addCustomTag('<meta name="twitter:card" content="' . htmlspecialchars($twitterCardType, ENT_QUOTES, 'UTF-8') . '" />');
 
         // Add canonical tag
         $canonicalUrl = Uri::current();

@@ -2,13 +2,13 @@
 <extension type="plugin" group="system" version="5.0" method="upgrade">
     <name>System - SEO AutoFill</name>
     <author>Zero Alpha Pty Ltd</author>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <copyright>Zero Alpha Pty Ltd</copyright>
     <license>GNU General Public License version 2 or later</license>
     <authorUrl>https://github.com/zeroalphagit/Joomla-Seo-AutoFill</authorUrl>
-    <creationDate>2024-08-01</creationDate>
+    <creationDate>2024-08-06</creationDate>
     <description><![CDATA[
-This Joomla plugin automatically generates SEO meta description based on your article content.<br />
+This Joomla plugin automatically generates SEO meta content for your website.<br />
 For updates, contributions, or improvement suggestions, please visit the project's GitHub page:<br />
 <a href="https://github.com/zeroalphagit/Joomla-Seo-AutoFill" target="_blank" rel="noopener noreferrer">
     Joomla SEO AutoFill on GitHub
