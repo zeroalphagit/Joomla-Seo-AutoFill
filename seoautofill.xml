@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<extension type="plugin" group="system" version="5.0" method="upgrade">
+<extension type="plugin" group="system" version="5.0" method="upgrade" client="site">
     <name>System - SEO AutoFill</name>
     <author>Zero Alpha Pty Ltd</author>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
     <copyright>Zero Alpha Pty Ltd</copyright>
     <license>GNU General Public License version 2 or later</license>
     <authorUrl>https://github.com/zeroalphagit/Joomla-Seo-AutoFill</authorUrl>

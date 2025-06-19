@@ -1,5 +1,4 @@
 <?php
-// No direct access
 defined('_JEXEC') or die;
 
 use Joomla\CMS\Plugin\CMSPlugin;
@@ -7,8 +6,8 @@ use Joomla\CMS\Factory;
 use Joomla\CMS\Uri\Uri;
 use Joomla\CMS\Document\HtmlDocument;
 use Joomla\CMS\MVC\Model\BaseDatabaseModel;
-use Joomla\Log\LogEntry;
-use Joomla\Log\Logger;
+use Joomla\CMS\Log\Log;
+use Joomla\CMS\Language\Text;
 use Exception;
 
 class PlgSystemSeoAutoFill extends CMSPlugin
@@ -19,48 +18,51 @@ class PlgSystemSeoAutoFill extends CMSPlugin
     public function onBeforeRender()
     {
         try {
-            // Ensure we are in the frontend
+            // Only run in site (frontend)
             if (Factory::getApplication()->isClient('administrator')) {
                 return;
             }
 
             $doc = Factory::getDocument();
 
-            // Ensure we are dealing with an HTML document
+            // Only run for HTML output
             if (!$doc instanceof HtmlDocument) {
                 return;
             }
 
-            // Check if meta description already exists
+            // Skip if meta description already set
             if ($doc->getMetaData('description')) {
                 return;
             }
 
-            // Get the current view and option
             $input = Factory::getApplication()->input;
             $option = $input->getCmd('option');
             $view = $input->getCmd('view');
             $id = $input->getInt('id');
 
-            // Only proceed for single article view
-            if ($option === 'com_content' && $view === 'article' && $id) {
-                $article = $this->getArticleContent($id);
-                if ($article && $article->access === 1) { // Check if access level is Public (1)
-                    $metaDescription = $this->generateMetaDescription($article->introtext);
-                    if ($metaDescription) {
-                        $doc->setMetaData('description', $metaDescription);
-                    } else {
-                        $doc->addCustomTag('<!-- Seo AutoFill: Description could not be generated. -->');
-                    }
+            // Only run for com_content single article view
+            if ($option !== 'com_content' || $view !== 'article' || !$id) {
+                return;
+            }
+
+            // Get the article content
+            $article = $this->getArticleContent($id);
+
+            // Check if it's public
+            if ($article && $article->access === 1) {
+                $introtext = $article->introtext ?? '';
+                $metaDescription = $this->generateMetaDescription($introtext);
+
+                if ($metaDescription) {
+                    $doc->setMetaData('description', $metaDescription);
+                    $doc->addCustomTag('<!-- SeoAutoFill plugin: Meta description added -->');
+                } else {
+                    $doc->addCustomTag('<!-- SeoAutoFill plugin: Description could not be generated. -->');
                 }
             }
         } catch (Exception $e) {
-            // Log the error
-            $logger = Logger::getInstance();
-            $logger->add(new LogEntry('Seo AutoFill plugin error: ' . $e->getMessage(), LogEntry::ERROR));
-
-            // Notify the user
-            Factory::getApplication()->enqueueMessage('An error occurred in the Seo AutoFill plugin while processing SEO auto-fill. Please try again later.', 'error');
+            // Log errors without breaking page rendering
+            Log::add('SeoAutoFill error in onBeforeRender: ' . $e->getMessage(), Log::ERROR, 'plg_system_seoautofill');
         }
     }
 
@@ -74,72 +76,52 @@ class PlgSystemSeoAutoFill extends CMSPlugin
                         ->where($db->quoteName('id') . ' = ' . (int) $id);
             $db->setQuery($query);
 
-            return $db->loadObject(); // Use loadObject to get both content and access level
+            return $db->loadObject();
         } catch (Exception $e) {
-            // Log the error
-            $logger = Logger::getInstance();
-            $logger->add(new LogEntry('Seo AutoFill plugin error retrieving article content: ' . $e->getMessage(), LogEntry::ERROR));
-
-            // Notify the user
-            Factory::getApplication()->enqueueMessage('An error occurred in the Seo AutoFill plugin while retrieving article content. Please try again later.', 'error');
-            return null; // Return null if there's an error
+            Log::add('SeoAutoFill error retrieving article: ' . $e->getMessage(), Log::ERROR, 'plg_system_seoautofill');
+            return null;
         }
     }
 
     private function generateMetaDescription($content)
     {
         try {
-            // Remove the first <h1> tag and its content
+            // Remove <h1> heading
             $content = preg_replace('/<h1[^>]*>.*?<\/h1>/is', '', $content, 1);
-    
-            // Remove all HTML tags
+
+            // Strip HTML and normalize text
             $text = strip_tags($content);
-    
-            // Decode HTML entities
             $text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
-    
-            // Remove non-printable characters
             $text = preg_replace('/[\x00-\x1F\x7F]/u', '', $text);
-    
-            // Normalize whitespace: replace multiple spaces and newlines with a single space
             $text = preg_replace('/\s+/', ' ', $text);
-    
-            // Ensure no leading or trailing spaces
             $text = trim($text);
-    
-            // Trim to 160 characters at the last complete word
+
+            // Limit to 160 characters without cutting mid-word
             if (strlen($text) > 160) {
-                // Find the position of the last space within the 160 characters limit
                 $text = substr($text, 0, 160);
                 $lastSpace = strrpos($text, ' ');
                 if ($lastSpace !== false) {
                     $text = substr($text, 0, $lastSpace);
                 }
             }
-    
+
             return $text;
         } catch (Exception $e) {
-            // Log the error
-            $logger = Logger::getInstance();
-            $logger->add(new LogEntry('Seo AutoFill plugin error generating meta description: ' . $e->getMessage(), LogEntry::ERROR));
-    
-            // Notify the user
-            Factory::getApplication()->enqueueMessage('An error occurred while generating the meta description. Please try again later.', 'error');
-            return ''; // Return empty if there's an error
+            Log::add('SeoAutoFill error generating meta description: ' . $e->getMessage(), Log::ERROR, 'plg_system_seoautofill');
+            return '';
         }
-    }  
+    }
 
     protected function getFirstImageFromContent($content)
     {
-        // Use preg_match to find the first image URL with specified file extensions
+        // Extract the first image (jpg, png, webp)
         preg_match('/<img[^>]+src=["\']([^"\']+\.(jpg|png|webp))["\'][^>]*>/i', $content, $matches);
 
         if (isset($matches[1])) {
             $imageUrl = $matches[1];
 
-            // Convert relative URL to absolute URL
+            // Make relative URLs absolute
             if (parse_url($imageUrl, PHP_URL_SCHEME) === null) {
-                // Relative URL; make it absolute
                 $imageUrl = Uri::root() . ltrim($imageUrl, '/');
             }
 
@@ -153,6 +135,7 @@ class PlgSystemSeoAutoFill extends CMSPlugin
     {
         $app = Factory::getApplication();
 
+        // Only run in frontend
         if ($app->isClient('administrator')) {
             return;
         }
@@ -160,42 +143,52 @@ class PlgSystemSeoAutoFill extends CMSPlugin
         $document = Factory::getDocument();
         $metas = $document->getHeadData();
 
-        // Extract title and URL from existing meta data
-        $ogTitle = isset($metas['title']) ? $metas['title'] : '';
-        $ogType = 'website'; // Default type
+        // Base OG and Twitter values
+        $ogTitle = $metas['title'] ?? '';
+        $ogType = 'website';
         $ogUrl = Uri::current();
-        $ogImage = ''; // Default image URL set to empty
-        $ogDescription = isset($metas['description']) ? $metas['description'] : '';
+        $ogImage = '';
+        $ogDescription = $metas['description'] ?? '';
 
-        // Twitter Card variables
-        $twitterCardType = 'summary_large_image'; // Default type
+        $twitterCardType = 'summary_large_image';
         $twitterTitle = $ogTitle;
         $twitterDescription = $ogDescription;
         $twitterImage = $ogImage;
 
-        // Fetch site name from global configuration
         $siteName = Factory::getConfig()->get('sitename');
 
-        // Retrieve the article content and find the first image
-        $itemId = $app->input->getInt('id'); // Get the article ID
-        $view = $app->input->getCmd('view'); // Get the current view
+        // Only run for com_content article view
+        $itemId = $app->input->getInt('id');
+        $view = $app->input->getCmd('view');
 
-        // Only proceed if the current view is a single article view
-        if ($itemId && $view === 'article') {
+        if (!$itemId || $view !== 'article') {
+            return;
+        }
+
+        try {
+            // Attempt to load article to extract image
             $articleModel = BaseDatabaseModel::getInstance('Article', 'ContentModel');
             $article = $articleModel->getItem($itemId);
 
             if ($article) {
-                // Extract the first image from the article content
-                $imageData = $this->getFirstImageFromContent($article->introtext . $article->fulltext);
+                $introtext = $article->introtext ?? '';
+                $fulltext = $article->fulltext ?? '';
+                $imageData = $this->getFirstImageFromContent($introtext . $fulltext);
                 $ogImage = $imageData['url'];
-
-                // Set Twitter image to Open Graph image
                 $twitterImage = $ogImage;
+
+                $document->addCustomTag('<!-- SeoAutoFill plugin: OG + Twitter meta generated -->');
             }
+        } catch (Exception $e) {
+            // Gracefully ignore if article doesn't exist (404)
+            if ($e->getCode() === 404) {
+                return;
+            }
+            Log::add('SeoAutoFill error in onBeforeCompileHead: ' . $e->getMessage(), Log::ERROR, 'plg_system_seoautofill');
+            return;
         }
 
-        // Add Open Graph tags first
+        // Open Graph tags
         if ($ogTitle) {
             $document->addCustomTag('<meta property="og:title" content="' . htmlspecialchars($ogTitle, ENT_QUOTES, 'UTF-8') . '" />');
         }
@@ -215,7 +208,7 @@ class PlgSystemSeoAutoFill extends CMSPlugin
             $document->addCustomTag('<meta property="og:site_name" content="' . htmlspecialchars($siteName, ENT_QUOTES, 'UTF-8') . '" />');
         }
 
-        // Add Twitter Card tags second
+        // Twitter tags
         $document->addCustomTag('<meta name="twitter:card" content="' . htmlspecialchars($twitterCardType, ENT_QUOTES, 'UTF-8') . '" />');
         if ($twitterTitle) {
             $document->addCustomTag('<meta name="twitter:title" content="' . htmlspecialchars($twitterTitle, ENT_QUOTES, 'UTF-8') . '" />');
@@ -227,9 +220,8 @@ class PlgSystemSeoAutoFill extends CMSPlugin
             $document->addCustomTag('<meta name="twitter:image" content="' . htmlspecialchars($twitterImage, ENT_QUOTES, 'UTF-8') . '" />');
         }
 
-        // Add canonical tag
+        // Canonical link
         $canonicalUrl = Uri::current();
         $document->addCustomTag('<link rel="canonical" href="' . htmlspecialchars($canonicalUrl, ENT_QUOTES, 'UTF-8') . '" />');
     }
 }
-?>
